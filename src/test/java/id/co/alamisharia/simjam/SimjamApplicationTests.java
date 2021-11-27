@@ -21,7 +21,9 @@ import reactor.test.StepVerifier;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,6 +42,14 @@ class SimjamApplicationTests implements TransactionType {
     private R2dbcEntityTemplate db;
     @Autowired
     private WebTestClient client;
+
+    public static Map<String, Account> buildAccountMap() {
+        HashMap<String, Account> accounts = new HashMap<>();
+        accounts.put("wawan", TestData.wawan);
+        accounts.put("teguh", TestData.teguh);
+        accounts.put("joko", TestData.joko);
+        return accounts;
+    }
 
     @Test
     void data_insert_experiment() {

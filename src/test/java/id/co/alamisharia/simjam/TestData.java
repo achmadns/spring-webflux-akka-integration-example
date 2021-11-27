@@ -5,7 +5,9 @@ import id.co.alamisharia.simjam.domain.Group;
 
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public interface TestData {
     Group desa = Group.builder().name("desa").balance(0D).build();
@@ -16,4 +18,7 @@ public interface TestData {
     Account wawan = SimjamApplicationTests.buildAccount(1L, "Wawan Setiawan",
             LocalDate.of(1990, 1, 10), "Kompleks Asia Serasi No 100", desa);
     List<Account> accounts = Arrays.asList(wawan, teguh, joko);
+
+    Map<String, Account> accountMap = SimjamApplicationTests.buildAccountMap();
+
 }

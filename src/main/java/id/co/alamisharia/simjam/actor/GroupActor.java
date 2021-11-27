@@ -17,16 +17,26 @@ public class GroupActor extends AbstractLoggingActor implements TransactionType 
     public Receive createReceive() {
         return receiveBuilder()
                 .match(TransactionMessage.class, t -> {
+                    if (t.getAmount() <= 0) {
+                        sender().tell(TransactionStatus.INVALID, self());
+                        return;
+                    }
+                    Double currentBalance = group.getBalance();
                     switch (t.getTransactionType()) {
                         case DEPOSIT:
-                            group.setBalance(group.getBalance() + t.getAmount());
+                        case RETURN:
+                            group.setBalance(currentBalance + t.getAmount());
                             sender().tell(TransactionStatus.SUCCESS, self());
                             break;
                         case LOAN:
-                            break;
-                        case RETURN:
+                            if (t.getAmount() <= currentBalance) {
+                                group.setBalance(currentBalance - t.getAmount());
+                                sender().tell(TransactionStatus.SUCCESS, self());
+                            } else
+                                sender().tell(TransactionStatus.INSUFFICIENT, self());
                             break;
                         default:
+                            sender().tell(TransactionStatus.INVALID, self());
                     }
                 })
                 .build();
