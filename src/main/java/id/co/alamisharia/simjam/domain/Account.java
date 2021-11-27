@@ -1,5 +1,6 @@
 package id.co.alamisharia.simjam.domain;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 import javax.persistence.Column;
@@ -24,6 +25,7 @@ public class Account {
     private Long socialNumber;
     private String name;
     @Column(name = "DATE_OF_BIRTH", columnDefinition = "DATE")
+    @JsonProperty("date_of_birth")
     private LocalDate dateOfBirth;
     private String address;
     /*@OneToMany

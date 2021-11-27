@@ -7,23 +7,28 @@ import id.co.alamisharia.simjam.repository.AccountRepository;
 import id.co.alamisharia.simjam.repository.GroupRepository;
 import id.co.alamisharia.simjam.repository.TransactionRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-class SimjamApplicationTests implements SimjamConstants {
+@ExtendWith(SpringExtension.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureWebTestClient
+class SimjamApplicationTests implements TransactionType {
 
     @Autowired
     private GroupRepository groupRepository;
@@ -33,25 +38,31 @@ class SimjamApplicationTests implements SimjamConstants {
     private TransactionRepository transactionRepository;
     @Autowired
     private R2dbcEntityTemplate db;
+    @Autowired
+    private WebTestClient client;
 
     @Test
     void data_insert_experiment() {
         StepVerifier.create(db.getDatabaseClient()
                 .sql("truncate account;truncate account_group;truncate transaction;").then()).verifyComplete();
-        Group desa = Group.builder().name("desa").balance(0D).build();
-        Mono<Group> group = groupRepository.save(desa);
+        Mono<Group> group = groupRepository.save(TestData.desa);
         StepVerifier.create(group).assertNext(g -> assertThat(g.getId()).isNotNull()).verifyComplete();
-        Account wawan = buildAccount(1L, "Wawan Setiawan",
-                LocalDate.of(1990, 1, 10), "Kompleks Asia Serasi No 100", desa);
-        Account teguh = buildAccount(2L, "Teguh Sudibyantoro",
-                LocalDate.of(1991, 2, 10), "Jalan Pemekaran No 99", desa);
-        Account joko = buildAccount(3L, "Joko Widodo,",
-                LocalDate.of(1992, 3, 10), "Dusun Pisang Rt 10 Rw 20", desa);
-        Flux<Account> accounts = accountRepository.saveAll(Flux.fromIterable(Arrays.asList(wawan, teguh, joko)));
+        Flux<Account> accounts = accountRepository.saveAll(Flux.fromIterable(TestData.accounts));
         StepVerifier.create(accounts).consumeNextWith(account -> assertThat(account.getId()).isNotNull())
                 .thenConsumeWhile(a -> true).verifyComplete();
-        StepVerifier.create(transactionRepository.save(buildTransaction(desa, wawan, 1_000_000D)))
+        StepVerifier.create(transactionRepository.save(buildTransaction(TestData.desa, TestData.wawan, 1_000_000D)))
                 .assertNext(t -> assertThat(t.getId()).isNotNull()).verifyComplete();
+        StepVerifier.create(accountRepository.findById(TestData.wawan.getId()))
+                .assertNext(a -> assertThat(a.getDateOfBirth()).isEqualTo(TestData.wawan.getDateOfBirth())).verifyComplete();
+    }
+
+    @Test
+    public void get_account_context() {
+        client.get().uri("/account")
+                .accept(MediaType.TEXT_PLAIN)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class).value(text -> assertThat(text).isEqualTo("Account context"));
     }
 
     private Transaction buildTransaction(Group group, Account account, double amount) {
@@ -63,7 +74,7 @@ class SimjamApplicationTests implements SimjamConstants {
                 .build();
     }
 
-    private Account buildAccount(long socialNumber, String name, LocalDate dob, String address, Group group) {
+    public static Account buildAccount(long socialNumber, String name, LocalDate dob, String address, Group group) {
         return Account.builder().socialNumber(socialNumber).name(name).dateOfBirth(dob)
                 .address(address)
 //                .groups(groups(group))

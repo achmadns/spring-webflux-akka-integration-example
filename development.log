@@ -2,3 +2,7 @@ consume flux on test:
 https://stackoverflow.com/questions/57221204/retrieve-all-flux-elements-in-stepverifier
 
 r2dbc still not support nested object graph
+
+https://blog.knoldus.com/still-with-spring-9-reasons-to-akka/
+docker exec -ti simjam-db bash
+psql --username postgres --dbname postgres < create-schema-data.sql
