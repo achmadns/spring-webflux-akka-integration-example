@@ -12,31 +12,18 @@ kafka-topics --bootstrap-server localhost:9092 --create --replication-factor 1 -
 
 
 https://docs.mongodb.com/kafka-connector/current/quick-start/
-
-curl -X POST \
-     -H "Content-Type: application/json" \
-     --data '
-     {"name": "transaction-sink",
-      "config": {
-         "connector.class":"com.mongodb.kafka.connect.MongoSinkConnector",
-         "connection.uri":"mongodb://mongo1:27017/?replicaSet=rs0",
-         "database":"quickstart",
-         "collection":"transaction",
-         "topics":"transaction",
-         "change.data.capture.handler": "com.mongodb.kafka.connect.sink.cdc.mongodb.ChangeStreamHandler"
-         }
-     }
-     ' \
-     http://connect:8083/connectors -w "\n"
-
-curl -X GET http://connect:8083/connectors
-
-
+cd docker
 docker images | grep quickstart | awk '{print $3}' | xargs docker rmi
+docker-compose up
+docker exec -it db bash -c 'psql -U postgres < /tmp/create-schema-data.sql'
+docker exec -it shell bash
 
 ./initialize-container.sh
 
 mongosh mongodb://mongo1:27017/?replicaSet=rs0
+use quickstart
+db.sink.find()
+
 
 s0 [primary] quicstart> use quickstart
 switched to db quickstart
