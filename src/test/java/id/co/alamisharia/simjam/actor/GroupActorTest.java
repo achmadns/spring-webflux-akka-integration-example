@@ -5,7 +5,7 @@ import akka.actor.ActorSystem;
 import akka.actor.Props;
 import akka.testkit.javadsl.TestKit;
 import id.co.alamisharia.simjam.TestData;
-import id.co.alamisharia.simjam.TransactionType;
+import id.co.alamisharia.simjam.TransactionCode;
 import id.co.alamisharia.simjam.domain.Group;
 import id.co.alamisharia.simjam.message.TransactionMessage;
 import id.co.alamisharia.simjam.message.TransactionStatus;
@@ -19,7 +19,7 @@ import java.time.LocalTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class GroupActorTest implements TestData, TransactionType {
+class GroupActorTest implements TestData, TransactionCode {
 
     protected static final ActorSystem system = ActorSystem.create();
     /**
@@ -34,7 +34,7 @@ class GroupActorTest implements TestData, TransactionType {
     public void transaction_should_go_through(String accountName, int transactionType, Double amount, String date, Double expectedBalanceAfterTransaction, String expectedTransactionStatus) {
         new TestKit(system) {{
             groupActor.tell(TransactionMessage.builder()
-                    .account(accountMap.get(accountName)).group(arisan).amount(amount).transactionType(transactionType)
+                    .account(accountMap.get(accountName)).group(arisan).amount(amount).transactionCode(transactionType)
                     .timestamp(LocalDateTime.of(LocalDate.parse(date), LocalTime.of(9, 0)))
                     .build(), getRef());
             expectMsg(Duration.ofSeconds(1), TransactionStatus.valueOf(expectedTransactionStatus));

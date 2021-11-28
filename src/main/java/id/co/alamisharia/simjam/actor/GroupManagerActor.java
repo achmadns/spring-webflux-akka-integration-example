@@ -3,9 +3,11 @@ package id.co.alamisharia.simjam.actor;
 import akka.actor.AbstractLoggingActor;
 import akka.actor.Props;
 import id.co.alamisharia.simjam.domain.Group;
+import id.co.alamisharia.simjam.domain.Transaction;
 import id.co.alamisharia.simjam.message.TransactionMessage;
 
 public class GroupManagerActor extends AbstractLoggingActor {
+
     @Override
     public Receive createReceive() {
         return receiveBuilder()
@@ -16,7 +18,11 @@ public class GroupManagerActor extends AbstractLoggingActor {
                             .getOrElse(() -> context()
                                     .actorOf(Props.create(GroupActor.class, () -> new GroupActor(group)), group.getName()))
                             .forward(t, context());
-                })
+                }).match(Transaction.class, t -> context().child(t.getGroupName())
+                        .getOrElse(() -> context()
+                                .actorOf(Props.create(GroupActor.class, () -> new GroupActor(Group.builder()
+                                        .name(t.getGroupName()).balance(0D).build())), t.getGroupName()))
+                        .forward(t, context()))
                 .build();
     }
 }

@@ -1,12 +1,17 @@
 package id.co.alamisharia.simjam.controller;
 
+import akka.actor.ActorRef;
+import akka.actor.ActorSystem;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import id.co.alamisharia.simjam.actor.TransactionHandlerActor;
 import id.co.alamisharia.simjam.domain.Account;
 import id.co.alamisharia.simjam.domain.Transaction;
 import id.co.alamisharia.simjam.repository.AccountRepository;
 import id.co.alamisharia.simjam.repository.TransactionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -26,6 +31,13 @@ public class SimjamController {
     private TransactionRepository transactionRepository;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private KafkaTemplate<String, String> kafkaTemplate;
+    @Autowired
+    private ActorSystem actorSystem;
+    @Autowired
+    @Qualifier("groupManagerActor")
+    private ActorRef groupManagerRef;
 
     @GetMapping("/account")
     public Flux<Account> listAccount() {
@@ -44,7 +56,7 @@ public class SimjamController {
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<Transaction> transact(@RequestBody Transaction transaction) {
         // TODO: 28/11/21 handle transaction flow; including posting the data into MongoDB through Kafka
-        return transactionRepository.save(transaction);
+        return Mono.create(sink -> actorSystem.actorOf(TransactionHandlerActor.props(sink, transaction, transactionRepository, kafkaTemplate, objectMapper, groupManagerRef)));
     }
 
     @GetMapping("/account/{socialNumber}/transaction")

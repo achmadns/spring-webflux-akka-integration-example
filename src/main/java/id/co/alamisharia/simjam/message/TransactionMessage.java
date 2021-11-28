@@ -16,5 +16,5 @@ public class TransactionMessage {
     private final Group group;
     private final Double amount;
     private final LocalDateTime timestamp;
-    private final int transactionType;
+    private final int transactionCode;
 }
