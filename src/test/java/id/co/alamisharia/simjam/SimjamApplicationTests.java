@@ -6,6 +6,8 @@ import id.co.alamisharia.simjam.domain.Transaction;
 import id.co.alamisharia.simjam.repository.AccountRepository;
 import id.co.alamisharia.simjam.repository.GroupRepository;
 import id.co.alamisharia.simjam.repository.TransactionRepository;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,10 +53,26 @@ class SimjamApplicationTests implements TransactionType {
         return accounts;
     }
 
+    @BeforeEach
+    public void before() {
+        cleanData();
+        TestData.desa.setId(null);
+        TestData.wawan.setId(null);
+        TestData.teguh.setId(null);
+        TestData.joko.setId(null);
+    }
+
+    @AfterEach
+    public void after() {
+//        cleanData();
+    }
+
     @Test
     void data_insert_experiment() {
-        StepVerifier.create(db.getDatabaseClient()
-                .sql("truncate account;truncate account_group;truncate transaction;").then()).verifyComplete();
+        insertData();
+    }
+
+    private void insertData() {
         Mono<Group> group = groupRepository.save(TestData.desa);
         StepVerifier.create(group).assertNext(g -> assertThat(g.getId()).isNotNull()).verifyComplete();
         Flux<Account> accounts = accountRepository.saveAll(Flux.fromIterable(TestData.accounts));
@@ -66,13 +84,65 @@ class SimjamApplicationTests implements TransactionType {
                 .assertNext(a -> assertThat(a.getDateOfBirth()).isEqualTo(TestData.wawan.getDateOfBirth())).verifyComplete();
     }
 
+    private void cleanData() {
+        StepVerifier.create(db.getDatabaseClient()
+                .sql("truncate account;truncate account_group;truncate transaction;").then()).verifyComplete();
+    }
+
     @Test
-    public void get_account_context() {
+    public void get_all_account() {
+        insertData();
         client.get().uri("/account")
-                .accept(MediaType.TEXT_PLAIN)
+                .accept(MediaType.APPLICATION_JSON)
                 .exchange()
                 .expectStatus().isOk()
-                .expectBody(String.class).value(text -> assertThat(text).isEqualTo("Account context"));
+                .expectBodyList(Account.class)
+                .hasSize(3);
+    }
+
+    @Test
+    public void save_an_account() {
+        client.post().uri("/account")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(TestData.wawan)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(Account.class)
+                .value(a -> assertThat(a.getId()).isNotNull());
+    }
+
+    @Test
+    public void do_transaction() {
+        client.post().uri("/transaction")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(buildTransaction(TestData.desa, TestData.wawan, 1_000_000))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(Transaction.class).value(t -> assertThat(t.getId()).isNotNull());
+        // TODO: 28/11/21 verify the state of the group and the transaction
+    }
+
+
+    @Test
+    public void get_transaction_between_date() {
+        insertData();
+        client.get().uri("/transaction/2020-08-16/2020-08-18")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBodyList(Transaction.class)
+                .hasSize(1);
+    }
+
+    @Test
+    public void get_transaction_of_an_account() {
+        insertData();
+        client.get().uri("/account/" + TestData.wawan.getSocialNumber() + "/transaction")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBodyList(Transaction.class)
+                .hasSize(1);
     }
 
     private Transaction buildTransaction(Group group, Account account, double amount) {
