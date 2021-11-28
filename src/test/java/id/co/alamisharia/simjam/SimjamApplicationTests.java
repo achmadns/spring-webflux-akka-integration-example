@@ -2,21 +2,20 @@ package id.co.alamisharia.simjam;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.BasicDBObject;
+import com.mongodb.ConnectionString;
+import com.mongodb.MongoClientSettings;
+import com.mongodb.reactivestreams.client.MongoClient;
+import com.mongodb.reactivestreams.client.MongoClients;
+import com.mongodb.reactivestreams.client.MongoCollection;
+import com.mongodb.reactivestreams.client.MongoDatabase;
 import id.co.alamisharia.simjam.domain.Account;
 import id.co.alamisharia.simjam.domain.Group;
 import id.co.alamisharia.simjam.domain.Transaction;
 import id.co.alamisharia.simjam.repository.AccountRepository;
 import id.co.alamisharia.simjam.repository.GroupRepository;
 import id.co.alamisharia.simjam.repository.TransactionRepository;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
+import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,11 +33,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.*;
-import java.util.concurrent.CountDownLatch;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -160,59 +160,35 @@ class SimjamApplicationTests implements TransactionCode {
         assertThat(account.getAddress()).isNotNull();
     }
 
+    /**
+     * Simulate transaction and verify that the data are inserted into MongoDB. Wait for few seconds to check the data are inserted.
+     *
+     * @throws InterruptedException
+     */
     @Test
-    public void do_transaction() throws JsonProcessingException, InterruptedException {
+    public void do_transaction() throws InterruptedException {
         insertData();
+        ConnectionString connString = new ConnectionString("mongodb://localhost:27017/quickstart?w=majority");
+        MongoClientSettings settings = MongoClientSettings.builder().applyConnectionString(connString).build();
+        MongoClient mongoClient = MongoClients.create(settings);
+        MongoDatabase database = mongoClient.getDatabase("quickstart");
+        MongoCollection<Document> collection = database.getCollection("sink");
+        StepVerifier.create(collection.deleteMany(new BasicDBObject()))
+                .assertNext(deleteResult -> assertThat(deleteResult.wasAcknowledged()).isTrue()).verifyComplete();
         client.post().uri("/transaction")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(buildTransaction(TestData.desa, TestData.wawan, 1_000_000))
                 .exchange()
                 .expectStatus().isCreated()
-                .expectBody(Transaction.class).value(t -> assertThat(t.getId()).isNotNull());
-
-//        HashMap<String, Object> producerConfig = new HashMap<>();
-//
-//        producerConfig.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapAddress);
-//        producerConfig.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-//        producerConfig.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-//        producerConfig.put(ProducerConfig.ACKS_CONFIG, "all");
-//        producerConfig.put(ProducerConfig.RETRIES_CONFIG, 0);
-//        producerConfig.put(ProducerConfig.BATCH_SIZE_CONFIG, 32768);
-//        producerConfig.put(ProducerConfig.LINGER_MS_CONFIG, 5);
-//        producerConfig.put(ProducerConfig.BUFFER_MEMORY_CONFIG, 33554432);
-//        producerConfig.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 60000);
-//        producerConfig.put("TOPIC_NAME", "transaction");
-//        CountDownLatch latch = new CountDownLatch(1);
-//        new KafkaProducer<String, String>(producerConfig)
-//                .send(new ProducerRecord<String, String>("transaction", "{}"), (metadata, exception) -> {
-//                    System.out.println("offset: " + metadata.offset());
-//                    latch.countDown();
-//                })
-//        ;
-//        latch.await();
-
-        Properties props = new Properties();
-        props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapAddress);
-        props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-        props.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getCanonicalName());
-        props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getCanonicalName());
-        props.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
-        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
-        consumer.subscribe(List.of("transaction"));
-
-        boolean confirmed = false;
-        while (!confirmed) {
-            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
-            for (ConsumerRecord<String, String> record : records) {
-                String recordString = "key=" + record.key() + ", value=" + record.value() + ", topic=" + record.topic() + ", partition=" + record.partition() + ", offset=" + record.offset();
-                System.out.println(recordString);
-                Transaction transaction = objectMapper.readValue(record.value(), Transaction.class);
-                assertThat(transaction.getId()).isNotNull();
-                confirmed = true;
-                break;
-            }
-            consumer.commitSync();
-        }
+                .expectBody(Transaction.class)
+                .value(t -> assertThat(t.getId()).isNotNull());
+        Thread.sleep(5_000);
+        final ArrayList<Document> savedTransactions = new ArrayList<>();
+        StepVerifier.create(collection.find())
+                .recordWith(() -> savedTransactions)
+                .thenConsumeWhile(document -> true)
+                .verifyComplete();
+        assertThat(savedTransactions).hasSize(1);
     }
 
 
@@ -231,6 +207,7 @@ class SimjamApplicationTests implements TransactionCode {
     @Test
     public void get_transaction_of_an_account() {
         insertData();
+        insertTransaction();
         client.get().uri("/account/" + TestData.wawan.getSocialNumber() + "/transaction")
                 .accept(MediaType.APPLICATION_JSON)
                 .exchange()

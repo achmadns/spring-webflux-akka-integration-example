@@ -9,3 +9,52 @@ psql --username postgres --dbname postgres < create-schema-data.sql
 
 docker exec -it simjam_broker_1 bash
 kafka-topics --bootstrap-server localhost:9092 --create --replication-factor 1 --partitions 1 --topic transaction
+
+
+https://docs.mongodb.com/kafka-connector/current/quick-start/
+
+curl -X POST \
+     -H "Content-Type: application/json" \
+     --data '
+     {"name": "transaction-sink",
+      "config": {
+         "connector.class":"com.mongodb.kafka.connect.MongoSinkConnector",
+         "connection.uri":"mongodb://mongo1:27017/?replicaSet=rs0",
+         "database":"quickstart",
+         "collection":"transaction",
+         "topics":"transaction",
+         "change.data.capture.handler": "com.mongodb.kafka.connect.sink.cdc.mongodb.ChangeStreamHandler"
+         }
+     }
+     ' \
+     http://connect:8083/connectors -w "\n"
+
+curl -X GET http://connect:8083/connectors
+
+
+docker images | grep quickstart | awk '{print $3}' | xargs docker rmi
+
+./initialize-container.sh
+
+mongosh mongodb://mongo1:27017/?replicaSet=rs0
+
+s0 [primary] quicstart> use quickstart
+switched to db quickstart
+rs0 [primary] quickstart> show collections
+sink
+source
+rs0 [primary] quickstart> db.sink.find()
+[
+  {
+    _id: ObjectId("61a33f7212b4404e66eb8bad"),
+    amount: 1000000,
+    code: Long("0"),
+    social_number: Long("1"),
+    group_id: Long("93"),
+    group_name: 'desa',
+    account_name: 'Wawan Setiawan',
+    transaction_timestamp: '2020-08-17T09:00:00',
+    id: Long("81")
+  }
+]
+rs0 [primary] quickstart>
