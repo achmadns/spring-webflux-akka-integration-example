@@ -19,14 +19,14 @@ import java.time.LocalTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class GroupActorTest implements TestData, TransactionCode {
+public class TransactionHandlerActorTest implements TestData, TransactionCode {
 
     protected static final ActorSystem system = ActorSystem.create();
     /**
      * Must be static object if we want to use parameterized test as we need the state of the group remains after consecutive tests
      */
     private static final Group arisan = Group.builder().balance(0D).name("arisan").build();
-    private static final ActorRef groupActor = system.actorOf(Props.create(GroupActor.class, () -> new GroupActor(arisan)));
+    private static final ActorRef groupActor = system.actorOf(Props.create(TransactionHandlerActor.class, () -> new TransactionHandlerActor(arisan)));
 
 
     @ParameterizedTest

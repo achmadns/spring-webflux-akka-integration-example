@@ -1,0 +1,19 @@
+
+@startuml
+participant "REST Controller" as controller
+participant "Request Handler" as requestHandler
+participant "Transaction Handler" as transactionHandler
+database "PostgreSQL" as db
+queue "Kafka" as queue
+database "MongoDB" as mongo
+controller -> requestHandler: forward transaction
+requestHandler -> requestHandler: initialize timeout timer
+requestHandler -> transactionHandler: forward transaction
+transactionHandler -> transactionHandler: validate and process transaction
+transactionHandler --> requestHandler: send transaction status
+requestHandler -> db: save the transaction
+db --> requestHandler: notify the data has been saved/failed
+requestHandler -> queue: publish saved transaction into Kafka
+requestHandler -> controller: flush the response
+queue --> mongo: save transaction log into MongoDB;\nutilizing Kafka connect, sink connector
+@enduml

@@ -1,5 +1,6 @@
 package id.co.alamisharia.simjam;
 
+import akka.actor.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.BasicDBObject;
@@ -12,6 +13,7 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
 import id.co.alamisharia.simjam.domain.Account;
 import id.co.alamisharia.simjam.domain.Group;
 import id.co.alamisharia.simjam.domain.Transaction;
+import id.co.alamisharia.simjam.message.TransactionStatus;
 import id.co.alamisharia.simjam.repository.AccountRepository;
 import id.co.alamisharia.simjam.repository.GroupRepository;
 import id.co.alamisharia.simjam.repository.TransactionRepository;
@@ -21,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,13 +35,18 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import scala.sys.Prop;
 
+import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -63,6 +71,11 @@ class SimjamApplicationTests implements TransactionCode {
     private String bootstrapAddress;
     @Value("${kafka.groupId}")
     String groupId;
+    @Autowired
+    @Qualifier("groupManagerActor")
+    private ActorRef groupManagerRef;
+    @Autowired
+    private ActorSystem system;
 
     public static Map<String, Account> buildAccountMap() {
         HashMap<String, Account> accounts = new HashMap<>();
@@ -79,11 +92,6 @@ class SimjamApplicationTests implements TransactionCode {
         TestData.wawan.setId(null);
         TestData.teguh.setId(null);
         TestData.joko.setId(null);
-    }
-
-    @AfterEach
-    public void after() {
-//        cleanData();
     }
 
     @Test
@@ -151,13 +159,14 @@ class SimjamApplicationTests implements TransactionCode {
     }
 
     @Test
-    public void deserialize() throws JsonProcessingException {
-        String json = "{\"id\":null,\"social_number\":1,\"name\":\"Wawan Setiawan\",\"date_of_birth\":\"1990-01-10\",\"address\":\"Kompleks Asia Serasi No 100\"}";
-        Account account = objectMapper.readValue(json, Account.class);
-        assertThat(account.getId()).isNull();
-        assertThat(account.getSocialNumber()).isNotNull();
-        assertThat(account.getDateOfBirth()).isNotNull();
-        assertThat(account.getAddress()).isNotNull();
+    public void save_an_account_must_fail_due_to_name_length() {
+        StepVerifier.create(client.post().uri("/account")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Account.builder().name("a").socialNumber(123465L).dateOfBirth(LocalDate.parse("1988-08-24")).build())
+                .exchange()
+                .expectStatus().isBadRequest()
+                .returnResult(new ParameterizedTypeReference<Map<String, String>>() {
+                }).getResponseBody()).assertNext(messageMap -> assertThat(messageMap.get("cause")).isEqualTo("bad input"));
     }
 
     /**
@@ -191,6 +200,77 @@ class SimjamApplicationTests implements TransactionCode {
         assertThat(savedTransactions).hasSize(1);
     }
 
+    @Test
+    public void do_transaction_must_fail_due_to_negative_balance() throws InterruptedException {
+        StepVerifier.create(client.post().uri("/transaction")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(buildTransaction(TestData.desa, TestData.wawan, -1000))
+                .exchange()
+                .expectStatus().isBadRequest()
+                .returnResult(new ParameterizedTypeReference<Map<String, String>>() {
+                }).getResponseBody()).assertNext(messageMap -> assertThat(messageMap.get("cause")).isEqualTo("bad input"));
+    }
+
+    @Test
+    public void do_random_transaction() throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1000);
+        final SecureRandom random = new SecureRandom();
+        final Scheduler scheduler = system.scheduler();
+        final Group group = Group.builder().name("random").balance(0D).id(0L).build();
+        LongStream.range(1, 100).forEach(id -> {
+            Account account = buildAccount(id, "user#" + id, LocalDate.parse("1988-08-12"), "empty", group);
+            system.actorOf(Props.create(TransactionSimulation.class,
+                            () -> new TransactionSimulation(latch, random, scheduler, group, account, groupManagerRef)))
+                    .tell("transact", ActorRef.noSender());
+        });
+        latch.await();
+    }
+
+    static class TransactionSimulation extends AbstractLoggingActor {
+        private Double amount = 0D;
+        private int transactionCode = DEPOSIT;
+
+        private final CountDownLatch latch;
+        private final SecureRandom random;
+        private final Scheduler scheduler;
+        private final Group group;
+        private final Account account;
+        private final ActorRef groupManagerRef;
+
+        TransactionSimulation(CountDownLatch latch, SecureRandom random, Scheduler scheduler, Group group, Account account, ActorRef groupManagerRef) {
+            this.latch = latch;
+            this.random = random;
+            this.scheduler = scheduler;
+            this.group = group;
+            this.account = account;
+            this.groupManagerRef = groupManagerRef;
+        }
+
+        @Override
+        public Receive createReceive() {
+            return receiveBuilder()
+                    .matchEquals("transact", s -> {
+                        amount = (double) random.nextInt(10) * 1000;
+                        transactionCode = random.nextBoolean() ? DEPOSIT : LOAN;
+                        groupManagerRef.tell(buildTransaction(group, account, amount, transactionCode), self());
+                    })
+                    .match(TransactionStatus.class, status -> {
+                        switch (status) {
+                            case SUCCESS:
+                                log().info("account {} made success {} as much as {}", account.getName(), 0 == transactionCode ? "deposit" : "loan", amount);
+                                break;
+                            case INSUFFICIENT:
+                                log().info("account {} failed to make a loan {}", account.getName(), amount);
+                                break;
+                            default:
+                        }
+                        latch.countDown();
+                        Duration nextTransactionBreakPeriod = Duration.ofMillis(random.nextInt(500));
+                        scheduler.scheduleOnce(nextTransactionBreakPeriod, self(), "transact", context().system().dispatcher(), self());
+                    })
+                    .build();
+        }
+    }
 
     @Test
     public void get_transaction_between_date() {
@@ -217,8 +297,12 @@ class SimjamApplicationTests implements TransactionCode {
     }
 
     private Transaction buildTransaction(Group group, Account account, double amount) {
+        return buildTransaction(group, account, amount, DEPOSIT);
+    }
+
+    private static Transaction buildTransaction(Group group, Account account, double amount, int transactionCode) {
         return Transaction.builder()
-                .code(DEPOSIT).socialNumber(account.getSocialNumber()).accountName(account.getName())
+                .code(transactionCode).socialNumber(account.getSocialNumber()).accountName(account.getName())
                 .groupId(group.getId()).groupName(group.getName())
                 .transactionTimestamp(LocalDateTime.of(2020, 8, 17, 9, 0))
                 .amount(amount)

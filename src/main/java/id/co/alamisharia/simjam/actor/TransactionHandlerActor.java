@@ -1,64 +1,63 @@
 package id.co.alamisharia.simjam.actor;
 
 import akka.actor.AbstractLoggingActor;
-import akka.actor.ActorRef;
-import akka.actor.Props;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import id.co.alamisharia.simjam.TransactionCode;
+import id.co.alamisharia.simjam.domain.Group;
 import id.co.alamisharia.simjam.domain.Transaction;
+import id.co.alamisharia.simjam.message.TransactionMessage;
 import id.co.alamisharia.simjam.message.TransactionStatus;
-import id.co.alamisharia.simjam.repository.TransactionRepository;
-import org.springframework.kafka.core.KafkaTemplate;
-import reactor.core.publisher.MonoSink;
 
-public class TransactionHandlerActor extends AbstractLoggingActor {
-    private final MonoSink<Transaction> sink;
-    private final Transaction transaction;
-    private final TransactionRepository transactionRepository;
-    private final KafkaTemplate<String, String> kafkaTemplate;
-    private final ObjectMapper objectMapper;
-    private final ActorRef groupManagerRef;
+/**
+ * Balance management per group; candidate for akka persistence
+ */
+public class TransactionHandlerActor extends AbstractLoggingActor implements TransactionCode {
+    private final Group group;
 
-    public TransactionHandlerActor(MonoSink<Transaction> sink, Transaction transaction, TransactionRepository transactionRepository, KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper, ActorRef groupManagerRef) {
-        this.sink = sink;
-        this.transaction = transaction;
-        this.transactionRepository = transactionRepository;
-        this.kafkaTemplate = kafkaTemplate;
-        this.objectMapper = objectMapper;
-        this.groupManagerRef = groupManagerRef;
+    public TransactionHandlerActor(Group group) {
+        this.group = group;
     }
 
     @Override
     public Receive createReceive() {
         return receiveBuilder()
-                .match(Transaction.class, t -> {
-                    kafkaTemplate.send("transaction", objectMapper.writeValueAsString(t))
-                            .addCallback(result -> sink.success(t), sink::error);
+                .match(TransactionMessage.class, t -> {
+                    Double amount = t.getAmount();
+                    int code = t.getTransactionCode();
+                    validateAndUpdateBalance(amount, code, t.getAccount().getName());
                 })
-                .match(TransactionStatus.class, s -> {
-                    switch (s) {
-                        case SUCCESS:
-                            transactionRepository.save(transaction)
-                                    .doOnNext(t -> self().tell(t, self()))
-                                    .doOnError(sink::error)
-                                    .subscribe();
-                            break;
-                        case INSUFFICIENT:
-                            sink.error(new IllegalArgumentException("Insufficient balance!"));
-                            break;
-                        default:
-                    }
+                .match(Transaction.class, t -> {
+                    Double amount = t.getAmount();
+                    int code = t.getCode();
+                    validateAndUpdateBalance(amount, code, t.getAccountName());
+
                 })
                 .build();
     }
 
-    public static Props props(MonoSink<Transaction> sink, Transaction transaction, TransactionRepository transactionRepository,
-                              KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper, ActorRef groupManagerRef) {
-        return Props.create(TransactionHandlerActor.class, () ->
-                new TransactionHandlerActor(sink, transaction, transactionRepository, kafkaTemplate, objectMapper, groupManagerRef));
-    }
-
-    @Override
-    public void preStart() throws Exception, Exception {
-        groupManagerRef.tell(transaction, self());
+    private void validateAndUpdateBalance(Double amount, int code, String accountName) {
+        if (amount <= 0) {
+            sender().tell(TransactionStatus.INVALID, self());
+            return;
+        }
+        Double currentBalance = group.getBalance();
+        switch (code) {
+            case DEPOSIT:
+            case RETURN:
+                group.setBalance(currentBalance + amount);
+                sender().tell(TransactionStatus.SUCCESS, self());
+                break;
+            case LOAN:
+                if (amount <= currentBalance) {
+                    group.setBalance(currentBalance - amount);
+                    sender().tell(TransactionStatus.SUCCESS, self());
+                } else {
+                    sender().tell(TransactionStatus.INSUFFICIENT, self());
+                    log().info("Group {}; {} asked for a loan {} while the current balance is {}", group.getName(), accountName, amount, currentBalance);
+                }
+                break;
+            default:
+                sender().tell(TransactionStatus.INVALID, self());
+        }
+        log().info("Group {} current balance: {}", group.getName(), group.getBalance());
     }
 }

@@ -18,7 +18,5 @@ public interface TestData {
     Account wawan = SimjamApplicationTests.buildAccount(1L, "Wawan Setiawan",
             LocalDate.of(1990, 1, 10), "Kompleks Asia Serasi No 100", desa);
     List<Account> accounts = Arrays.asList(wawan, teguh, joko);
-
     Map<String, Account> accountMap = SimjamApplicationTests.buildAccountMap();
-
 }

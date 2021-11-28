@@ -3,7 +3,7 @@ package id.co.alamisharia.simjam.controller;
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import id.co.alamisharia.simjam.actor.TransactionHandlerActor;
+import id.co.alamisharia.simjam.actor.RequestHandlerActor;
 import id.co.alamisharia.simjam.domain.Account;
 import id.co.alamisharia.simjam.domain.Transaction;
 import id.co.alamisharia.simjam.repository.AccountRepository;
@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import javax.validation.Valid;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -47,16 +48,15 @@ public class SimjamController {
 
     @PostMapping("/account")
     @ResponseStatus(HttpStatus.CREATED)
-    public Mono<Account> create(@RequestBody Account account) {
+    public Mono<Account> create(@Valid @RequestBody Account account) {
         return accountRepository.save(account);
     }
 
 
     @PostMapping("/transaction")
     @ResponseStatus(HttpStatus.CREATED)
-    public Mono<Transaction> transact(@RequestBody Transaction transaction) {
-        // TODO: 28/11/21 handle transaction flow; including posting the data into MongoDB through Kafka
-        return Mono.create(sink -> actorSystem.actorOf(TransactionHandlerActor.props(sink, transaction, transactionRepository, kafkaTemplate, objectMapper, groupManagerRef)));
+    public Mono<Transaction> transact(@Valid @RequestBody Transaction transaction) {
+        return Mono.create(sink -> actorSystem.actorOf(RequestHandlerActor.props(sink, transaction, transactionRepository, kafkaTemplate, objectMapper, groupManagerRef)));
     }
 
     @GetMapping("/account/{socialNumber}/transaction")
@@ -68,6 +68,8 @@ public class SimjamController {
     @GetMapping("/transaction/{from}/{to}")
     public Flux<Transaction> findTransactionBetweenDate(@PathVariable String from, @PathVariable String to) {
         // TODO: 28/11/21 find transaction between string date; validate the parameter
-        return transactionRepository.findByTransactionTimestampBetween(LocalDateTime.of(LocalDate.parse(from), LocalTime.of(0, 0)), LocalDateTime.of(LocalDate.parse(to), LocalTime.of(23, 59)));
+        return transactionRepository.findByTransactionTimestampBetween(
+                LocalDateTime.of(LocalDate.parse(from), LocalTime.of(0, 0)),
+                LocalDateTime.of(LocalDate.parse(to), LocalTime.of(23, 59)));
     }
 }

@@ -33,9 +33,7 @@ public class GlobalErrorWebExceptionHandler extends AbstractErrorWebExceptionHan
     }
 
     private Mono<ServerResponse> renderErrorResponse(ServerRequest request, ErrorAttributes errorAttributes) {
-        // TODO: 28/11/21 verify the exception thrown by controller
         Map<String, Object> errorPropertiesMap = getErrorAttributes(request, ErrorAttributeOptions.defaults());
-        Throwable cause = getError(request);
         translateThrownException(getError(request), errorPropertiesMap);
         return ServerResponse.status(HttpStatus.BAD_REQUEST)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -47,6 +45,6 @@ public class GlobalErrorWebExceptionHandler extends AbstractErrorWebExceptionHan
             errorPropertiesMap.put("cause", "data already exists");
             return;
         }
-        errorPropertiesMap.put("cause", error.getMessage());
+        errorPropertiesMap.put("cause", "bad input");
     }
 }

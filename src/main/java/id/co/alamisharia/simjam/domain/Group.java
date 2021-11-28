@@ -17,7 +17,7 @@ public class Group {
     @Id
     @GeneratedValue
     @org.springframework.data.annotation.Id
-    private Long id;
+    private Long id = 0L;
     private Double balance;
     private String name;
 

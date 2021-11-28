@@ -1,8 +1,10 @@
-package id.co.alamisharia.simjam.config;
+package id.co.alamisharia.simjam.config.support;
 
 import akka.actor.*;
-import id.co.alamisharia.simjam.config.support.SpringActorProvider;
 
+/**
+ * NOTE: Still not sure how to create prototype bean with constructor parameter.
+ */
 public class SpringExtension extends AbstractExtensionId<SpringActorProvider> {
 
     public static final SpringExtension INSTANCE = new SpringExtension();
