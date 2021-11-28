@@ -1,5 +1,7 @@
 package id.co.alamisharia.simjam;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import id.co.alamisharia.simjam.domain.Account;
 import id.co.alamisharia.simjam.domain.Group;
 import id.co.alamisharia.simjam.domain.Transaction;
@@ -44,6 +46,8 @@ class SimjamApplicationTests implements TransactionType {
     private R2dbcEntityTemplate db;
     @Autowired
     private WebTestClient client;
+    @Autowired
+    private ObjectMapper objectMapper;
 
     public static Map<String, Account> buildAccountMap() {
         HashMap<String, Account> accounts = new HashMap<>();
@@ -73,8 +77,7 @@ class SimjamApplicationTests implements TransactionType {
     }
 
     private void insertData() {
-        Mono<Group> group = groupRepository.save(TestData.desa);
-        StepVerifier.create(group).assertNext(g -> assertThat(g.getId()).isNotNull()).verifyComplete();
+        insertGroupData();
         Flux<Account> accounts = accountRepository.saveAll(Flux.fromIterable(TestData.accounts));
         StepVerifier.create(accounts).consumeNextWith(account -> assertThat(account.getId()).isNotNull())
                 .thenConsumeWhile(a -> true).verifyComplete();
@@ -82,6 +85,11 @@ class SimjamApplicationTests implements TransactionType {
                 .assertNext(t -> assertThat(t.getId()).isNotNull()).verifyComplete();
         StepVerifier.create(accountRepository.findById(TestData.wawan.getId()))
                 .assertNext(a -> assertThat(a.getDateOfBirth()).isEqualTo(TestData.wawan.getDateOfBirth())).verifyComplete();
+    }
+
+    private void insertGroupData() {
+        Mono<Group> group = groupRepository.save(TestData.desa);
+        StepVerifier.create(group).assertNext(g -> assertThat(g.getId()).isNotNull()).verifyComplete();
     }
 
     private void cleanData() {
@@ -112,7 +120,18 @@ class SimjamApplicationTests implements TransactionType {
     }
 
     @Test
+    public void deserialize() throws JsonProcessingException {
+        String json = "{\"id\":null,\"social_number\":1,\"name\":\"Wawan Setiawan\",\"date_of_birth\":\"1990-01-10\",\"address\":\"Kompleks Asia Serasi No 100\"}";
+        Account account = objectMapper.readValue(json, Account.class);
+        assertThat(account.getId()).isNull();
+        assertThat(account.getSocialNumber()).isNotNull();
+        assertThat(account.getDateOfBirth()).isNotNull();
+        assertThat(account.getAddress()).isNotNull();
+    }
+
+    @Test
     public void do_transaction() {
+        insertData();
         client.post().uri("/transaction")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(buildTransaction(TestData.desa, TestData.wawan, 1_000_000))

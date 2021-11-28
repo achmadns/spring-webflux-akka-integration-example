@@ -10,9 +10,9 @@ import javax.persistence.Id;
 import java.time.LocalDate;
 
 @Entity
-@Builder
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @org.springframework.data.relational.core.mapping.Table("ACCOUNT")
@@ -22,15 +22,11 @@ public class Account {
     @org.springframework.data.annotation.Id
     private Long id;
     @Column(name = "SOCIAL_NUMBER", unique = true, nullable = false)
+    @JsonProperty("social_number")
     private Long socialNumber;
     private String name;
-    @Column(name = "DATE_OF_BIRTH", columnDefinition = "DATE")
     @JsonProperty("date_of_birth")
+    @Column(name = "DATE_OF_BIRTH", columnDefinition = "DATE")
     private LocalDate dateOfBirth;
     private String address;
-    /*@OneToMany
-    @JoinTable(name = "ACCOUNT_GROUP_MAPPING",
-            joinColumns = {@JoinColumn(name = "SOCIAL_NUMBER", referencedColumnName = "SOCIAL_NUMBER")},
-            inverseJoinColumns = {@JoinColumn(name = "GROUP_ID", referencedColumnName = "ID")})*/
-//    private Set<Group> groups;
 }
