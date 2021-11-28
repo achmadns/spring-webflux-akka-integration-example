@@ -98,7 +98,7 @@ and you should see the following output:
 
 ```
 
-Please check [GroupActorTest.java](src/test/java/id/co/alamisharia/simjam/actor/GroupActorTest.java)
+Please check [TransactionHandlerActorTest.java](src/test/java/id/co/alamisharia/simjam/actor/TransactionHandlerActorTest.java)
 for the balance calculation unit test.
 
 Run the following to execute all tests:
